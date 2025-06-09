@@ -1,0 +1,1055 @@
+import random
+import time as time_module
+import re
+import copy
+
+# === 1. Film Class ===
+# This class represents a single film in the cinema.
+class Film:
+    def __init__(self, title, description, genre, base_price, ratings=None, available_times=None):
+        """
+        Initialises a new Film object.
+        Args:
+            title (str): The name of the film.
+            description (str): A brief summary of the film. (Requirement: Film details)
+            genre (str): The film's genre (e.g., "Sci-Fi", "Horror"). (Requirement: Film details)
+            base_price (float): The base ticket price for this film. (Requirement: Film details)
+            ratings (list, optional): A list of initial (rating, comment) tuples. Defaults to None.
+            available_times (list, optional): A list of strings indicating when this film can be shown (e.g., "Afternoon", "Evening").
+        """
+        self.title = title
+        self.description = description
+        self.genre = genre
+        self.base_price = base_price
+        self.spectators = 0  # This tracks the number of spectators who have submitted reviews.
+        self.total_rating = 0 # This stores the sum of all ratings given to the film.
+        self.reviews = []     # This list stores all the reviews (rating, comment) tuples.
+
+        # Requirement: Provide data covering at least 5 films, 10 reviews
+        # If initial ratings are provided (e.g., for our demo data), add them when the film is created.
+        if ratings:
+            for rating, comment in ratings:
+                # 'is_initial=True' means these are pre-existing reviews, so they don't count towards new spectators.
+                self.add_review(rating, comment, is_initial=True)
+
+        self.available_times = available_times if available_times is not None else [] # Times this film can be scheduled.
+
+    def add_review(self, rating, comment, is_initial=False):
+        """
+        Adds a new review to the film.
+        Args:
+            rating (int): The numerical rating for the film (1 to 5). (Requirement: numerical rating of the film ranging from 1 to 5)
+            comment (str): The customer's written review. (Requirement: write a review of the film)
+            is_initial (bool): True if this is an initial, pre-loaded review; False for new customer reviews.
+        Returns:
+            bool: True if the review was added successfully, False otherwise.
+        """
+        if 1 <= rating <= 5: # Validates that the rating is between 1 and 5.
+            self.total_rating += rating
+            if not is_initial: # Only increment spectators if it's a new review from a customer.
+                self.spectators += 1
+            self.reviews.append((rating, comment))
+            return True
+        return False
+
+    def average_rating(self):
+        """
+        Calculates the average rating of the film.
+        Returns:
+            float: The average rating, rounded to two decimal places. Returns 0 if no reviews.
+        """
+        # Requirement: a report containing ... the average rating
+        # We calculate the average by dividing the total rating by the number of reviews.
+        # We use 'len(self.reviews)' because 'self.spectators' only counts new reviews.
+        return round(self.total_rating / len(self.reviews), 2) if self.reviews else 0
+
+# === 2. Screen Class ===
+# This class represents a cinema screen, including its seats and the shows scheduled on it.
+class Screen:
+    def __init__(self, number):
+        """
+        Initialises a new Screen object.
+        Args:
+            number (int): The unique number of the screen (e.g., 1 to 6). (Requirement: cinema has six screens)
+        """
+        self.number = number
+        self.seats = self._initialize_seats() # Sets up the seats for this screen.
+        self.shows = {} # A dictionary to store the shows scheduled on this screen (key: time, value: Show object).
+
+    def _initialize_seats(self):
+        """
+        Sets up the 50 seats for the screen: 40 standard and 10 VIP.
+        Seats are numbered as S1-S40 for standard and V1-V10 for VIP.
+        Returns:
+            dict: A dictionary where keys are seat IDs (e.g., "S1", "V5") and values are dictionaries with seat status, type, and price modifier.
+        """
+        # Requirement: all contain 50 seats, 10 of which are VIP seats (extra room for legs, bigger chair).
+        seats = {}
+
+        # Standard Seats (S)
+        for i in range(1, 41): # 40 standard seats
+            seat_id = f"S{i}"
+            seats[seat_id] = {"status": "Available", "type": "Standard", "price_modifier": 0}
+
+        # VIP Seats (V)
+        for i in range(1, 11): # 10 VIP seats
+            seat_id = f"V{i}"
+            # Requirement: if chosen vip seat than the user has to pay an extra £5
+            seats[seat_id] = {"status": "Available", "type": "VIP", "price_modifier": 5}
+
+        # Randomly book a few seats initially to show some are unavailable.
+        all_seat_ids = list(seats.keys())
+        num_to_book = min(5, len(all_seat_ids)) # Book up to 5 seats randomly at the start.
+        random_booked_seats = random.sample(all_seat_ids, k=num_to_book)
+        for seat_id in random_booked_seats:
+            seats[seat_id]["status"] = "Booked"
+
+        return seats
+
+    def add_show(self, time, film, price):
+        """
+        Adds a new show to this screen's schedule.
+        Args:
+            time (str): The show time (e.g., "Afternoon", "Evening").
+            film (Film): The Film object to be shown.
+            price (float): The ticket price for this specific show time.
+        """
+        # When a show is added, we make a deep copy of the screen's current seat layout.
+        # This means changes to seats for this specific show won't affect other shows on the same screen.
+        self.shows[time] = Show(time, film, price, copy.deepcopy(self.seats), self)
+
+    def display_seating(self, show):
+        """
+        Displays a visual seating map for a given show.
+        Shows which seats are available (A) or booked (X), and their type (S for Standard, V for VIP).
+        Args:
+            show (Show): The Show object for which to display the seating.
+        """
+        print(f"\n--- Screen {self.number} - {show.film.title} ({show.time}) ---")
+        print("S: Standard Seat (No extra charge) | V: VIP Seat (£5 extra)")
+        print("A: Available | X: Reserved (Booked)") # Clarified X meaning
+        print("-" * 50)
+
+        standard_seats = []
+        vip_seats = []
+
+        for seat_id, data in show.available_seats.items():
+            status_char = "A" if data["status"] == "Available" else "X" # Changed 'B' to 'X'
+            if data["type"] == "Standard":
+                standard_seats.append(f"{seat_id}({status_char})")
+            else: # VIP Seat
+                vip_seats.append(f"{seat_id}({status_char})")
+
+        # Display Standard Seats in blocks for readability
+        print("Standard Seats:")
+        for i in range(0, len(standard_seats), 10): # Display 10 seats per line
+            print("  " + " ".join(standard_seats[i:i+10]))
+
+        # Display VIP Seats
+        print("\nVIP Seats:")
+        for i in range(0, len(vip_seats), 10): # Display 10 seats per line
+            print("  " + " ".join(vip_seats[i:i+10]))
+
+        print("-" * 50) # Bottom separator.
+
+# === 3. Show Class ===
+# This class represents a specific film showing at a particular time on a screen.
+class Show:
+    def __init__(self, time, film, price, seats, screen):
+        """
+        Initialises a new Show object.
+        Args:
+            time (str): The time of the show (e.g., "Afternoon", "Evening").
+            film (Film): The Film object being shown.
+            price (float): The base ticket price for this show.
+            seats (dict): A deep copy of the screen's seats, specific to this show.
+            screen (Screen): A reference to the Screen object this show belongs to.
+        """
+        self.time = time
+        self.film = film
+        self.price = price
+        self.available_seats = seats # This is a unique copy of seats for THIS show.
+        self.screen = screen # Reference to the screen for things like screen.number.
+
+    def book_seat(self, seat_id):
+        """
+        Attempts to book a specific seat for this show.
+        Args:
+            seat_id (str): The ID of the seat to book (e.g., "S1", "V5").
+        Returns:
+            bool: True if the seat was booked successfully, False otherwise.
+        """
+        # Requirement: user inputs a seat that's already booked an error will occur saying the seat is already booked
+        if seat_id in self.available_seats: # Check if the seat ID is valid for this show.
+            if self.available_seats[seat_id]["status"] == "Available": # Check if the seat is currently available.
+                self.available_seats[seat_id]["status"] = "Booked" # Change status to "Booked".
+                return True
+            else:
+                print(f"Error: Seat {seat_id} is already booked.") # Error message if already booked.
+                return False
+        else:
+            print(f"Error: Invalid seat ID '{seat_id}'.") # Error message if seat ID is invalid.
+            return False
+
+    def unbook_seat(self, seat_id):
+        """
+        Changes the status of a booked seat back to 'Available'.
+        Used when modifying or cancelling a booking.
+        Args:
+            seat_id (str): The ID of the seat to unbook.
+        Returns:
+            bool: True if the seat was successfully unbooked, False otherwise.
+        """
+        if seat_id in self.available_seats and self.available_seats[seat_id]["status"] == "Booked":
+            self.available_seats[seat_id]["status"] = "Available"
+            return True
+        return False
+
+# === 4. Customer Class ===
+# This class represents a customer of the cinema.
+class Customer:
+    def __init__(self, name, email):
+        """
+        Initialises a new Customer object.
+        Args:
+            name (str): The customer's name.
+            email (str): The customer's email address. (Requirement: only email is required part of this)
+        """
+        self.name = name
+        self.email = email
+        self.bookings = [] # A list to store Booking objects associated with this customer.
+
+    def book_ticket(self, show, seat_id, payment_method):
+        """
+        Attempts to book a ticket for a specific show and seat for this customer.
+        Args:
+            show (Show): The Show object for which to book a ticket.
+            seat_id (str): The ID of the seat to book.
+            payment_method (str): The chosen payment method ("Cash" or "Card").
+        Returns:
+            Booking or None: The Booking object if successful, None otherwise.
+        """
+        if show.book_seat(seat_id): # Tries to book the seat using the Show's method.
+            seat_details = show.available_seats[seat_id]
+            # Calculates the final price, including any VIP surcharge.
+            final_price = show.price + seat_details["price_modifier"]
+
+            # Creates a new Booking object.
+            booking = Booking(self, show, seat_id, payment_method, final_price)
+            self.bookings.append(booking) # Adds the booking to the customer's list of bookings.
+            return booking
+        return None
+
+    def review_film(self, film, rating, comment):
+        """
+        Allows the customer to submit a review for a film.
+        Args:
+            film (Film): The Film object to review.
+            rating (int): The numerical rating (1-5).
+            comment (str): The review comment.
+        Returns:
+            bool: True if review was added successfully, False otherwise.
+        """
+        # Requirement: After the show, customers are able to write a review of the film they watched
+        # The main logic to check if a customer has booked the film is handled in `main()` before calling this.
+        if film.add_review(rating, comment): # Uses the Film object's method to add the review.
+            return True
+        return False
+
+# === 5. Booking Class ===
+# This class represents a single customer booking.
+class Booking:
+    _booking_id_counter = 0 # A class-level counter to ensure each booking gets a unique ID.
+
+    def __init__(self, customer, show, seat_id, payment_method, final_price):
+        """
+        Initialises a new Booking object.
+        Args:
+            customer (Customer): The Customer object who made the booking.
+            show (Show): The Show object for which the ticket was booked.
+            seat_id (str): The ID of the booked seat.
+            payment_method (str): The payment method used.
+            final_price (float): The total price paid for this booking.
+        """
+        # Requirement: add the ability to make more bookings and if the customer does not wish to make any new bookings
+        # We give each booking a unique ID.
+        Booking._booking_id_counter += 1
+        self.booking_id = Booking._booking_id_counter
+
+        self.customer = customer
+        self.show = show
+        self.seat_id = seat_id
+        self.payment_method = payment_method
+        self.final_price = final_price
+
+# === 6. Cinema Class ===
+# This is the main class that manages all screens, films, customers, and bookings.
+class Cinema:
+    def __init__(self):
+        """
+        Initialises the Cinema system.
+        """
+        # Requirement: The cinema has six screens
+        self.screens = [Screen(i) for i in range(1, 7)] # Creates 6 Screen objects.
+        self.films = {}      # Dictionary to store Film objects (key: film title).
+        self.customers = []  # List to store Customer objects.
+        # Requirement: A data saving system, add a variable called DataStorage = []
+        self.DataStorage = [] # This list stores dictionaries of booking information for reporting and review tracking.
+
+    def add_film(self, title, description, genre, base_price, ratings=None, available_times=None):
+        """
+        Adds a new film to the cinema's available films.
+        Args:
+            title (str): The film's title.
+            description (str): Film description.
+            genre (str): Film genre.
+            base_price (float): Base ticket price.
+            ratings (list, optional): Initial ratings.
+            available_times (list, optional): Times film can be scheduled.
+        """
+        self.films[title] = Film(title, description, genre, base_price, ratings, available_times)
+
+    def setup_initial_films(self):
+        """
+        Populates the cinema with a predefined list of 14 films.
+        Each film has a title, description, genre, base price, initial ratings, and available show times.
+        """
+        # Requirement: provide data covering at least 5 films
+        # We provide 14 films for more variety and demonstration.
+        film_data = [
+            ("The Quantum Leap", "A scientist accidentally travels to a future where time travel is outlawed.", "Sci-Fi", 8.00, [(5, "Mind-bending!"), (4, "A bit slow but thought-provoking.")], ["Evening", "First Night"]),
+            ("Whispers in the Woods", "A group of friends gets lost in a haunted forest.", "Horror", 7.50, [(3, "Okay scares, predictable ending."), (4, "Good jump scares.")], ["Afternoon", "Evening", "Second Night"]),
+            ("Love in the Time of AI", "A romantic comedy about a human falling in love with an advanced AI.", "Romance", 9.00, [(4, "Charming and funny!"), (5, "Surprisingly deep."), (4, "Unique premise.")], ["Afternoon", "Evening"]),
+            ("The Great Heist", "A team of master thieves plans an impossible museum robbery.", "Action", 10.00, [(5, "Non-stop action!"), (4, "Great twists."), (5, "Edge of my seat!")], ["First Night", "Evening"]),
+            ("Mystic Island", "Explorers discover a hidden island with ancient secrets.", "Adventure", 8.00, [(3, "Visuals were good, story was weak."), (4, "Family-friendly adventure.")], ["Afternoon", "Second Night"]),
+            ("City of Dreams", "A young aspiring musician navigates the competitive music scene in New York.", "Drama", 7.00, [(5, "Inspiring and emotional!"), (4, "Relatable characters."), (3, "Felt a bit cliché.")], ["Afternoon", "Evening", "First Night"]),
+            ("Cybernetic Dawn", "In a dystopian future, a rebel fights against a totalitarian regime.", "Sci-Fi", 9.50, [(4, "Gritty and intense."), (3, "Too dark for my taste."), (4, "Strong performances.")], ["First Night", "Second Night"]),
+            ("Forgotten Lullaby", "A detective investigates the disappearance of a famous singer.", "Mystery", 8.50, [(4, "Kept me guessing!"), (5, "Brilliant plot."), (4, "Well-paced thriller.")], ["Evening", "First Night"]),
+            ("Laugh Out Loud", "A stand-up comedian struggles with fame and personal life.", "Comedy", 6.00, [(5, "Hilarious from start to finish!"), (4, "Needed more emotional depth."), (5, "Best comedy of the year!")], ["Afternoon", "Second Night"]),
+            ("Echoes of War", "A gripping historical drama about a soldier's experience during wartime.", "Historical", 10.00, [(5, "Powerful and moving."), (4, "Authentic portrayal."), (5, "A must-watch.")], ["Evening", "First Night"]),
+            ("The Stolen Crown", "A fantasy epic where a young hero must reclaim a magical artifact.", "Fantasy", 9.00, [(4, "Epic adventure!"), (3, "CGI was a bit off."), (4, "Good for fantasy fans.")], ["Afternoon", "Second Night"]),
+            ("Culinary Quest", "A chef travels the world to discover unique cooking traditions.", "Documentary", 7.00, [(5, "Made me hungry!"), (4, "Informative and engaging."), (5, "A food lover's dream.")], ["Afternoon"]),
+            ("Zero Gravity", "Astronauts face an unexpected challenge during a deep-space mission.", "Sci-Fi", 9.50, [(5, "Breathtaking visuals!"), (4, "Suspenseful."), (5, "Truly immersive.")], ["Evening", "First Night"]),
+            ("The Painter's Secret", "An art historian uncovers a hidden message in a Renaissance masterpiece.", "Thriller", 8.50, [(4, "Clever plot."), (3, "Slow burn."), (4, "Intriguing mystery.")], ["Evening", "Second Night"])
+        ]
+        for title, desc, genre, price, ratings, times in film_data:
+            self.add_film(title, desc, genre, price, ratings, times)
+
+    def setup_shows(self):
+        """
+        Sets up the shows for each screen, assigning films to specific times.
+        It adjusts the film's base price based on the show time.
+        Show times are randomized per screen.
+        """
+        # Requirement: For each screen, there are 4 shows per day: 1 in the afternoon, 1 in the evening and 2 at night.
+        base_time_prices = {"Afternoon": -2.00, "Evening": 0.00, "First Night": 2.00, "Second Night": 1.00}
+        all_time_slots = ["Afternoon", "Evening", "First Night", "Second Night"]
+
+        all_films_list = list(self.films.values())
+        random.shuffle(all_films_list) # Randomize the order of films
+
+        film_assignment_index = 0
+
+        for screen in self.screens:
+            # Shuffle the time slots for each screen to randomize their order
+            shuffled_time_slots = random.sample(all_time_slots, k=len(all_time_slots))
+
+            for time_slot in shuffled_time_slots:
+                # Find an available film that can be shown at this time slot
+                selected_film = None
+                # Iterate through films starting from the current assignment index
+                for i in range(len(all_films_list)):
+                    candidate_film = all_films_list[(film_assignment_index + i) % len(all_films_list)]
+                    if time_slot in candidate_film.available_times:
+                        selected_film = candidate_film
+                        film_assignment_index = (film_assignment_index + i + 1) % len(all_films_list)
+                        break
+
+                # If no film is specifically available for this slot, pick a random one
+                if selected_film is None:
+                    selected_film = random.choice(all_films_list)
+
+
+                # Calculate the final show price: film's base price + time-based modifier.
+                # Requirement: The pricing of the shows is different: the afternoon show is the cheapest, the first night show is the most expensive.
+                show_price = selected_film.base_price + base_time_prices.get(time_slot, 0.00)
+                show_price = max(5.00, show_price) # Ensure price doesn't go too low (e.g., minimum £5).
+
+                screen.add_show(time_slot, selected_film, show_price)
+
+
+    def generate_reports(self):
+        """
+        Generates and prints the monthly reports:
+        - Number of spectators and average rating per film.
+        - The film that generated the highest income.
+        """
+        # Requirement: After each month, the user of the system must print:
+        print("\n--- Monthly Report ---")
+
+        total_cinema_income = 0
+        total_bookings_count = 0
+
+        print("\nFilm Performance:")
+        # We'll use these dictionaries to aggregate data from DataStorage for each film.
+        film_booking_counts = {film_title: 0 for film_title in self.films.keys()}
+        film_incomes = {film_title: 0.0 for film_title in self.films.keys()}
+
+        # Go through all recorded bookings in DataStorage to gather statistics.
+        for booking_data in self.DataStorage:
+            film_title = booking_data.get('film_title')
+            final_price = booking_data.get('final_price', 0)
+
+            if film_title in film_booking_counts:
+                film_booking_counts[film_title] += 1 # Count a spectator (booking) for this film.
+                film_incomes[film_title] += final_price # Add to this film's total income.
+
+            total_cinema_income += final_price # Accumulate total income for the cinema.
+            total_bookings_count += 1 # Count total bookings made.
+
+        # Requirement: a report containing the number of spectators per film, along with the average rating
+        for film_title, film_obj in self.films.items():
+            print(f"  Film: {film_title}")
+            print(f"    Description: {film_obj.description}")
+            print(f"    Genre: {film_obj.genre}")
+            print(f"    Average Rating: {film_obj.average_rating()}/5 ({len(film_obj.reviews)} reviews)")
+            # 'film_booking_counts' shows total bookings (spectators) regardless of if they reviewed.
+            print(f"    Total Spectators (based on bookings): {film_booking_counts.get(film_title, 0)}")
+            print(f"    Estimated Income: £{film_incomes.get(film_title, 0.0):.2f}")
+            print("    Reviews:")
+            # Requirement: all rating data from the DataStorage list must be added and displayed.
+            # Film objects directly hold reviews, so we display them from there.
+            if film_obj.reviews:
+                for rating, comment in film_obj.reviews:
+                    print(f"      - Rating: {rating}/5, Comment: \"{comment}\"")
+            else:
+                print("      No reviews yet.")
+            print("-" * 40)
+
+        print(f"\nTotal Cinema Income from all bookings: £{total_cinema_income:.2f}")
+        print(f"Total Bookings Across All Films: {total_bookings_count}")
+
+        # Requirement: a report containing the film which generated the highest income.
+        highest_income_film = None
+        max_income = -1
+
+        for film_title, income in film_incomes.items():
+            if income > max_income:
+                max_income = income
+                highest_income_film = self.films[film_title] # Get the actual Film object.
+
+        if highest_income_film:
+            print(f"\nHighest Income Film: {highest_income_film.title} (Estimated Income: £{max_income:.2f})")
+        else:
+            print("\nNo income data available yet.")
+
+
+    def find_customer(self, email):
+        """
+        Finds a customer by their email address.
+        Args:
+            email (str): The email address to search for.
+        Returns:
+            Customer or None: The Customer object if found, None otherwise.
+        """
+        for customer in self.customers:
+            if customer.email == email:
+                return customer
+        return None
+
+    def display_film_options(self):
+        """
+        Allows the user to browse through available films and select one.
+        Users can type "Next", "Back", "Select", or "Exit".
+        Returns:
+            Film or None: The selected Film object, or None if the user exits.
+        """
+        # Requirement: enable users to choose films
+        # Requirement: enable them to browse through the films by typing "Next" or "Back" or "Select" or even "Exit" to discard booking as a whole.
+        film_titles = list(self.films.keys()) # Get a list of all film titles.
+        current_film_index = 0 # Start with the first film.
+
+        while True:
+            film = self.films[film_titles[current_film_index]] # Get the current film object.
+            print(f"\n--- Film: {film.title} ---")
+            print(f"  Description: {film.description}")
+            print(f"  Genre: {film.genre}")
+            print(f"  Base Ticket Price: £{film.base_price:.2f}")
+            print(f"  Existing Rating: {film.average_rating()}/5 ({len(film.reviews)} reviews)")
+            print(f"  Available Times: {', '.join(film.available_times)}")
+            print("-" * 30)
+
+            print("\nOptions: (Next) (Back) (Select) (Exit)") # Display options to the user.
+            command = input("Enter command: ").lower() # Get user input and convert to lowercase.
+
+            if command == "next":
+                current_film_index = (current_film_index + 1) % len(film_titles) # Move to the next film, loop back to start if at end.
+            elif command == "back":
+                current_film_index = (current_film_index - 1 + len(film_titles)) % len(film_titles) # Move to the previous film, loop to end if at start.
+            elif command == "select":
+                return film # User chose to select this film, return the Film object.
+            elif command == "exit":
+                return None # User chose to exit the booking process, return None.
+            else:
+                print("Invalid command. Please use 'Next', 'Back', 'Select', or 'Exit'.")
+
+    def _populate_initial_data(self):
+        """
+        Generates initial customer, booking, and review data for demonstration purposes.
+        This ensures that when reports are generated, there's sufficient data.
+        """
+        # This message indicates the start of populating demo data for reports (15 customers, 15 bookings, 10 reviews).
+        # print("\n--- Populating initial data for reports (15 customers, 15 bookings, 10 reviews) ---")
+
+        # Requirement: provide data covering at least 15 customers
+        # Create 15 unique customers.
+        for i in range(1, 16):
+            customer_name = f"Demo Customer {i}"
+            customer_email = f"democustomer{i}@example.com"
+            customer = Customer(customer_name, customer_email)
+            self.customers.append(customer)
+
+        # Requirement: provide data covering at least 15 seats (5 of which VIP seats)
+        # Simulate 15 bookings.
+        all_films = list(self.films.values()) # Get all films.
+        vip_bookings_made = 0 # Counter for VIP bookings.
+
+        for i in range(15): # Loop to make 15 bookings.
+            customer = self.customers[i % len(self.customers)] # Cycle through the demo customers.
+
+            film_to_book = random.choice(all_films)
+
+            selected_show = None
+            chosen_screen = None
+            chosen_time = None
+
+            # Find an available show for the chosen film.
+            eligible_shows = []
+            for screen in self.screens:
+                for time_slot, show_obj in screen.shows.items(): # 'time' here is a local variable from .items()
+                    if show_obj.film.title == film_to_book.title and time_slot in film_to_book.available_times:
+                        eligible_shows.append((screen, show_obj))
+
+            if not eligible_shows: # Fallback if specific film is not scheduled.
+                screen = random.choice(self.screens)
+                time_slot = random.choice(list(screen.shows.keys()))
+                selected_show = screen.shows[time_slot]
+                chosen_screen = screen
+                chosen_time = time_slot
+            else:
+                chosen_screen, selected_show = random.choice(eligible_shows)
+                chosen_time = selected_show.time
+
+            if selected_show: # If a show was found.
+                seat_id = None
+
+                # Prioritise VIP seats for the first 5 bookings.
+                if vip_bookings_made < 5:
+                    available_vip_seats = [sid for sid, data in selected_show.available_seats.items()
+                                           if data["status"] == "Available" and data["type"] == "VIP"]
+                    if available_vip_seats:
+                        seat_id = random.choice(available_vip_seats)
+                        vip_bookings_made += 1
+
+                # If no VIP seat or 5 VIP bookings already made, try for a Standard seat.
+                if not seat_id:
+                    available_standard_seats = [sid for sid, data in selected_show.available_seats.items()
+                                                if data["status"] == "Available" and data["type"] == "Standard"]
+                    if available_standard_seats:
+                        seat_id = random.choice(available_standard_seats)
+
+                if seat_id: # If an available seat was found.
+                    booking_obj = customer.book_ticket(selected_show, seat_id, "Card") # Simulate payment by Card.
+                    if booking_obj:
+                        # Store booking data in DataStorage as a dictionary.
+                        self.DataStorage.append({
+                            "booking_id": booking_obj.booking_id,
+                            "customer_name": customer.name,
+                            "customer_email": customer.email,
+                            "film_title": film_to_book.title,
+                            "seat_id": seat_id,
+                            "show_time": chosen_time,
+                            "screen_number": chosen_screen.number,
+                            "final_price": booking_obj.final_price,
+                            "rating_added": False # This flag is crucial for tracking reviews.
+                        })
+
+        # Requirement: provide data covering at least 10 reviews (with rating)
+        # Simulate 10 reviews.
+        random.shuffle(self.DataStorage) # Shuffle bookings to review different ones.
+        reviews_made = 0
+        for booking_data in self.DataStorage:
+            if reviews_made >= 10: # Stop after 10 reviews.
+                break
+            # Only review bookings that haven't been rated yet.
+            if not booking_data["rating_added"]:
+                customer_email = booking_data["customer_email"]
+                film_title = booking_data["film_title"]
+
+                customer = self.find_customer(customer_email)
+                film = self.films.get(film_title)
+
+                if customer and film:
+                    rating = random.randint(1, 5) # Random rating between 1 and 5.
+                    comment = f"Simulated review for {film_title} by {customer.name}."
+                    # Use the customer's review_film method, which in turn calls film.add_review.
+                    if customer.review_film(film, rating, comment):
+                        booking_data["rating_added"] = True # Mark this specific booking as rated.
+                        reviews_made += 1
+        # This message indicates that the initial data population is complete.
+        # print("--- Initial data population complete. ---")
+
+
+# === 7. Main Function (Interactive Menu) ===
+# This function runs the main interactive loop for the cinema system.
+def main():
+    cinema = Cinema() # Create the main Cinema object.
+    cinema.setup_initial_films() # Populate the cinema with films.
+    cinema.setup_shows() # Schedule the films on screens.
+    cinema._populate_initial_data() # Generate initial demo data for reports.
+
+    while True: # Main loop for the cinema menu.
+        print("\nWelcome to Odeon Cinema!")
+        print("1. Book a Ticket")
+        print("2. Submit a Film Review")
+        print("3. Admin: View Reports")
+        print("4. Exit")
+        print("5. Modify a Booking") # New option for booking modification.
+        choice = input("Select an option: ")
+
+        if choice == "1":
+            # --- Booking a Ticket Section ---
+            customer_name = input("Enter your name: ")
+
+            customer_email = ""
+            while True:
+                customer_email = input("Enter your email address: ")
+                # Requirement: only email is required part of this.
+                # Data validation for email format.
+                if re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", customer_email):
+                    break # Exit loop if email format is valid.
+                else:
+                    print("Invalid email format. Please try again.")
+
+            # Find or create a customer based on email.
+            customer = cinema.find_customer(customer_email)
+            if not customer:
+                customer = Customer(customer_name, customer_email)
+                cinema.customers.append(customer)
+
+            # Allows customer to browse and select a film.
+            selected_film = None
+            while True: # Added a loop here for re-selection
+                selected_film = cinema.display_film_options()
+                if selected_film is None: # If user chose to exit film selection.
+                    print("Booking discarded.")
+                    break # Break out of this while True loop to return to main menu
+
+                # Find shows for the selected film.
+                available_screen_times = {}
+                for screen in cinema.screens:
+                    for time, show_obj in screen.shows.items(): # 'time' here is a local variable from .items()
+                        if show_obj.film.title == selected_film.title and time in selected_film.available_times:
+                            if screen.number not in available_screen_times:
+                                available_screen_times[screen.number] = {}
+                            available_screen_times[screen.number][time] = show_obj
+
+                if not available_screen_times:
+                    print(f"'{selected_film.title}' is not currently showing on any screen at its available times. Please select another film.")
+                    # Continues the while True loop, prompting for display_film_options() again
+                else:
+                    break # Exit the loop if a valid film with shows is found.
+
+            if selected_film is None: # Check again if the user ultimately exited film selection
+                continue # Go back to main menu
+
+            print(f"\n'{selected_film.title}' is available at:")
+            for s_num, times_dict in available_screen_times.items():
+                print(f"  Screen {s_num}: {', '.join(times_dict.keys())}") # Show available times for each screen.
+
+            chosen_screen_number = None
+            chosen_time = None
+            selected_show = None
+
+            # Loop to get valid screen and time input.
+            while selected_show is None:
+                try:
+                    chosen_screen_number_input = input("Select a screen number for this film: ")
+                    chosen_screen_number = int(chosen_screen_number_input)
+                    if chosen_screen_number not in available_screen_times:
+                        print("Invalid screen selection for this film. Please try again.")
+                        continue
+
+                    available_times_for_screen = available_screen_times[chosen_screen_number].keys()
+                    # Requirement: display the day times so the user knows what to type for the input to be accepted
+                    chosen_time = input(f"Select a show time for Screen {chosen_screen_number} ({', '.join(available_times_for_screen)}): ").strip().title()
+
+                    # Requirement: A customer who wants to book a ticket, needs to select the specific show time.
+                    if chosen_time not in available_screen_times[chosen_screen_number]:
+                        print("Invalid time selection for this screen. Please choose from: " + ", ".join(available_times_for_screen))
+                        continue
+
+                    selected_show = available_screen_times[chosen_screen_number][chosen_time]
+
+                except ValueError:
+                    print("Invalid input. Please enter a number for the screen.")
+                except Exception as e:
+                    print(f"An unexpected error occurred: {e}")
+
+            # Display seating map for the selected show.
+            cinema.screens[chosen_screen_number - 1].display_seating(selected_show)
+
+            chosen_seat_id = ""
+            # Loop to get a valid and available seat ID.
+            while True:
+                # Updated prompt for simplified seat IDs
+                chosen_seat_id = input("Enter your desired seat ID (e.g., S1, V5): ").upper().strip()
+                if chosen_seat_id in selected_show.available_seats:
+                    if selected_show.available_seats[chosen_seat_id]["status"] == "Available":
+                        break # Valid and available seat chosen.
+                    else:
+                        # Requirement: user inputs a seat that's already booked an error will occur saying the seat is already booked.
+                        print(f"Seat {chosen_seat_id} is already booked. Please choose another.")
+                else:
+                    print("Invalid seat ID format or seat does not exist. Please try again (e.g., S1, V5).")
+
+
+            # --- Payment System Section ---
+            # Requirement: Customers can decide to pay using a credit card or cash
+            payment_method = ""
+            while payment_method not in ["cash", "card"]: # Loop until valid payment method is chosen.
+                payment_method = input("Payment method (Cash/Card): ").lower()
+                if payment_method not in ["cash", "card"]:
+                    print("Invalid payment method. Please choose 'Cash' or 'Card'.")
+
+            seat_details = selected_show.available_seats[chosen_seat_id]
+            # Calculate final price, including VIP surcharge if applicable.
+            final_ticket_price = selected_show.price + seat_details["price_modifier"]
+
+            booking_successful = False
+            if payment_method == "cash":
+                # Requirement: if the user picks cash then a message will pop up telling them to pay with cash on the nearest odeon cinema premises
+                print(f"\nPlease pay £{final_ticket_price:.2f} with cash at the nearest Odeon Cinema premises before the show time.")
+                booking_successful = True
+            elif payment_method == "card":
+                # Requirement: if chosen card display the digital receipt before payment which should have the price of the film and any additional fee
+                print("\n--- Digital Receipt ---")
+                print(f"Film: {selected_film.title}")
+                print(f"Show Time: {chosen_time}")
+                print(f"Screen: {chosen_screen_number}")
+                print(f"Seat: {chosen_seat_id} ({seat_details['type']})")
+                print(f"Ticket Price: £{selected_show.price:.2f}")
+                # Requirement: the additional fee is only from the seating, if chosen vip seat than the user has to pay an extra £5
+                if seat_details['price_modifier'] > 0:
+                    print(f"VIP Seat Surcharge: £{seat_details['price_modifier']:.2f}")
+                print(f"Total Amount Due: £{final_ticket_price:.2f}")
+                print("-" * 25)
+
+                # Requirement: in the payment system create a realistic payment input menu with some form of data validation, eg number of characters.
+                card_number = ""
+                while not (card_number.isdigit() and len(card_number) == 16): # Validate 16-digit number.
+                    card_number = input("Enter 16-digit card number: ")
+                    if not (card_number.isdigit() and len(card_number) == 16):
+                        print("Invalid card number. Must be 16 digits.")
+
+                expiry_date = ""
+                while not re.match(r"^(0[1-9]|1[0-2])\/?([0-9]{2})$", expiry_date): # Validate MM/YY format.
+                    expiry_date = input("Enter expiry date (MM/YY): ")
+                    if not re.match(r"^(0[1-9]|1[0-2])\/?([0-9]{2})$", expiry_date):
+                        print("Invalid expiry date format (MM/YY).")
+
+                cvv = ""
+                while not (cvv.isdigit() and len(cvv) == 3): # Validate 3-digit number.
+                    cvv = input("Enter CVV (3 digits): ")
+                    if not (cvv.isdigit() and len(cvv) == 3):
+                        print("Invalid CVV. Must be 3 digits.")
+
+                print("Processing payment...")
+                time_module.sleep(1)
+                print("Payment successful!")
+                booking_successful = True
+
+            if booking_successful:
+                # If payment was successful, finalise the booking.
+                booking = customer.book_ticket(selected_show, chosen_seat_id, payment_method)
+                if booking:
+                    print(f"Booking confirmed for {booking.show.film.title} at {booking.show.time} in Screen {booking.show.screen.number}, Seat {booking.seat_id} for £{booking.final_price:.2f}")
+
+                    # Requirement: A data saving system, add a variable called DataStorage = [] and UserInformation = []
+                    # Store booking information in DataStorage as a dictionary.
+                    # This dictionary serves as the "UserInformation" for this *individual* booking.
+                    cinema.DataStorage.append({
+                        "booking_id": booking.booking_id, # Unique ID for this booking.
+                        "customer_name": customer.name,
+                        "customer_email": customer.email,
+                        "film_title": selected_film.title,
+                        "seat_id": chosen_seat_id,
+                        "show_time": chosen_time,
+                        "screen_number": chosen_screen_number,
+                        "final_price": final_ticket_price,
+                        "rating_added": False # Flag to track if a rating has been added for *this specific booking*.
+                    })
+                    print("Booking details saved.")
+
+                    # Requirement: add the ability to make more bookings and if the customer does not wish to make any new bookings
+                    another_booking = ""
+                    while another_booking not in ["yes", "no"]:
+                        another_booking = input("Do you wish to make another booking? (yes/no): ").lower()
+                        if another_booking not in ["yes", "no"]:
+                            print("Invalid input. Please enter 'yes' or 'no'.")
+
+                    if another_booking == "no":
+                        # Requirement: if the customer does not wish to make any new bookings there will be a 5 second timer and after that the introduction will begin again
+                        print("Returning to main menu in 5 seconds...")
+                        time_module.sleep(5)
+                        continue # Go back to the main menu.
+                    else:
+                        # Requirement: if the customer wishes to make another booking than the code will only reset to them choosing film and screens and entering their details
+                        continue # Restart the booking process (the outer while loop continues).
+                else:
+                    print("Failed to confirm booking. This should not happen if seat was available.")
+
+        elif choice == "2":
+            # --- Submit a Film Review Section ---
+            # Requirement: To add a rating the user has to enter their email
+            customer_email = ""
+            customer = None
+            eligible_bookings_for_review = []
+
+            while True:
+                customer_email = input("Enter your email address: ")
+                if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", customer_email):
+                    print("Invalid email format. Please try again.")
+                    continue
+
+                customer = cinema.find_customer(customer_email)
+                if not customer:
+                    print("No customer found with this email. Please book a ticket first.")
+                    break # Exit review process if no customer found.
+
+                # Requirement: if the email is found inside a list within DataStorage lists, customer rating will be added to that list
+                # Find all unrated bookings for this customer.
+                eligible_bookings_for_review = [
+                    (idx, b_data) for idx, b_data in enumerate(cinema.DataStorage)
+                    if b_data.get("customer_email") == customer_email and not b_data.get("rating_added")
+                ]
+
+                if not eligible_bookings_for_review:
+                    print("You have no unrated bookings. You can only review films you have watched and not yet rated.")
+                    break # Exit if no eligible bookings.
+
+                print("\nYour unrated bookings:")
+                for i, (idx, booking_data) in enumerate(eligible_bookings_for_review):
+                    print(f"  {i+1}. Film: {booking_data['film_title']}, Show: {booking_data['show_time']} (Screen {booking_data['screen_number']})")
+
+                try:
+                    review_choice_idx = int(input("Select the number of the booking you wish to review: ")) - 1
+                    if 0 <= review_choice_idx < len(eligible_bookings_for_review):
+                        selected_booking_data_index_in_datastorage, selected_booking_data_dict = eligible_bookings_for_review[review_choice_idx]
+                        film_to_review_title = selected_booking_data_dict["film_title"]
+                        break # Valid booking selected for review.
+                    else:
+                        print("Invalid selection. Please enter a valid number.")
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+
+            if not customer or not eligible_bookings_for_review: # Check if loops were broken due to invalid input.
+                continue
+
+            film_to_review = cinema.films.get(film_to_review_title)
+
+            if not film_to_review:
+                print("Error: Film not found for selected booking.") # This should ideally not happen.
+                continue
+
+            try:
+                rating = int(input("Rate the film (1-5): "))
+                # Requirement: provide a numerical rating of the film ranging from 1 to 5.
+                if not (1 <= rating <= 5):
+                    print("Rating must be between 1 and 5.")
+                    continue
+            except ValueError:
+                print("Invalid input. Please enter a number for the rating.")
+                continue
+
+            comment = input("Enter your review (optional): ")
+            # Requirement: After the show, customers are able to write a review of the film they watched
+            if customer.review_film(film_to_review, rating, comment):
+                # Mark the specific booking in DataStorage as rated.
+                # This prevents the user from reviewing the same booking instance again.
+                cinema.DataStorage[selected_booking_data_index_in_datastorage]["rating_added"] = True
+                print("Review submitted successfully!")
+            else:
+                print("Failed to submit review. (This should not happen here if conditions met.)")
+
+        elif choice == "3":
+            # --- Admin: View Reports Section ---
+            # Requirement: Protect access to admin, when the option is chosen a password "Pedro02" Must be entered before gaining access.
+            password = input("Enter admin password: ")
+            if password == "Pedro02": # Check the password.
+                cinema.generate_reports() # Call the report generation method.
+                # Requirement: when the admin function is called all rating data from the DataStorage list must be added and displayed.
+                # The generate_reports method already displays all film reviews directly from the film objects.
+            else:
+                print("Incorrect password. Access denied.")
+
+        elif choice == "4":
+            print("Goodbye!")
+            break # Exit the main loop, ending the program.
+
+        elif choice == "5":
+            # --- Modify a Booking Section ---
+            # Requirement: Customers can decide to pay using a credit card or cash, and may change the date/time of the show,
+            # provided there are still seats available for the new selected date.
+            customer_email = ""
+            customer_bookings = []
+            while True:
+                customer_email = input("Enter your email address: ")
+                if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", customer_email):
+                    print("Invalid email format. Please try again.")
+                    continue
+
+                # Find all bookings for this customer from DataStorage.
+                customer_bookings = [
+                    (idx, b_data) for idx, b_data in enumerate(cinema.DataStorage)
+                    if b_data.get("customer_email") == customer_email
+                ]
+
+                if not customer_bookings:
+                    print("No bookings found for this email.")
+                    break # Exit modification if no bookings.
+
+                print("\nYour current bookings:")
+                for i, (idx, booking_data) in enumerate(customer_bookings):
+                    print(f"  {i+1}. Film: {booking_data['film_title']}, Show: {booking_data['show_time']} (Screen {booking_data['screen_number']}), Seat: {booking_data['seat_id']}")
+
+                try:
+                    modify_choice_idx = int(input("Select the number of the booking to modify (or 0 to cancel): ")) - 1
+                    if modify_choice_idx == -1: # User chose 0 to cancel.
+                        print("Booking modification cancelled.")
+                        break
+                    if 0 <= modify_choice_idx < len(customer_bookings):
+                        # Get the selected booking's data from DataStorage.
+                        selected_booking_data_index_in_datastorage, selected_booking_data_dict = customer_bookings[modify_choice_idx]
+
+                        # Find the actual live Booking object from the customer's list of bookings.
+                        selected_booking_obj = None
+                        found_customer_obj = cinema.find_customer(customer_email)
+                        if found_customer_obj:
+                            for b_obj in found_customer_obj.bookings:
+                                if b_obj.booking_id == selected_booking_data_dict["booking_id"]:
+                                    selected_booking_obj = b_obj
+                                    break
+
+                        if selected_booking_obj is None:
+                            print("Error: Corresponding live booking data not found. Cannot modify.")
+                            break
+
+                        # Step 1: Unbook the old seat to make it available again.
+                        old_show = selected_booking_obj.show
+                        old_seat_id = selected_booking_obj.seat_id
+                        old_show.unbook_seat(old_seat_id)
+                        print(f"Original seat {old_seat_id} in Screen {old_show.screen.number} for {old_show.film.title} at {old_show.time} is now available.")
+
+                        # Step 2: Prompt for new show/seat details.
+                        film_for_modification = cinema.films.get(selected_booking_data_dict['film_title'])
+                        if not film_for_modification:
+                            print("Error: Original film not found.")
+                            break
+
+                        # Find all available shows for this film across screens.
+                        available_screen_times_for_film = {}
+                        for screen in cinema.screens:
+                            for time, show_obj in screen.shows.items(): # 'time' here is a local variable from .items()
+                                if show_obj.film.title == film_for_modification.title and time in film_for_modification.available_times:
+                                    if screen.number not in available_screen_times_for_film:
+                                        available_screen_times_for_film[screen.number] = {}
+                                    available_screen_times_for_film[screen.number][time] = show_obj
+
+                        if not available_screen_times_for_film:
+                            print(f"'{film_for_modification.title}' is not currently showing. Cannot modify.")
+                            break
+
+                        print(f"\n'{film_for_modification.title}' is available at:")
+                        for s_num, times_dict in available_screen_times_for_film.items():
+                            print(f"  Screen {s_num}: {', '.join(times_dict.keys())}")
+
+                        new_screen_number = None
+                        new_time = None
+                        new_show = None
+
+                        # Loop to get valid new screen and time.
+                        while new_show is None:
+                            try:
+                                new_screen_number_input = input("Select new screen number for this film: ")
+                                new_screen_number = int(new_screen_number_input)
+                                if new_screen_number not in available_screen_times_for_film:
+                                    print("Invalid screen selection for this film. Please try again.")
+                                    continue
+
+                                new_available_times_for_screen = available_screen_times_for_film[new_screen_number].keys()
+                                new_time = input(f"Select new show time for Screen {new_screen_number} ({', '.join(new_available_times_for_screen)}): ").strip().title()
+
+                                if new_time not in available_screen_times_for_film[new_screen_number]:
+                                    print("Invalid time selection for this screen. Please choose from: " + ", ".join(new_available_times_for_screen))
+                                    continue
+
+                                new_show = available_screen_times_for_film[new_screen_number][new_time]
+
+                            except ValueError:
+                                print("Invalid input. Please enter a number for the screen.")
+
+                        # Step 3: Display seating for the new show and get new seat choice.
+                        cinema.screens[new_screen_number - 1].display_seating(new_show)
+
+                        new_seat_id = ""
+                        # Loop to get valid and available new seat.
+                        while True:
+                            # Updated prompt for simplified seat IDs
+                            new_seat_id = input(f"Enter your desired new seat ID (e.g., S1, V5) for {new_show.film.title} at {new_show.time}: ").upper().strip()
+                            if new_seat_id in new_show.available_seats:
+                                if new_show.available_seats[new_seat_id]["status"] == "Available":
+                                    break # Valid and available new seat.
+                                else:
+                                    print(f"Seat {new_seat_id} is already booked in the new show. Please choose another.")
+                            else:
+                                print("Invalid seat ID format or seat does not exist. Please try again (e.g., S1, V5).")
+
+                        # Step 4: Book the new seat and update booking details.
+                        if new_show.book_seat(new_seat_id):
+                            new_seat_details = new_show.available_seats[new_seat_id]
+                            new_final_price = new_show.price + new_seat_details["price_modifier"]
+
+                            # Update the live Booking object with new details.
+                            selected_booking_obj.show = new_show
+                            selected_booking_obj.seat_id = new_seat_id
+                            selected_booking_obj.final_price = new_final_price
+
+                            # Update the corresponding entry in DataStorage.
+                            cinema.DataStorage[selected_booking_data_index_in_datastorage].update({
+                                "film_title": new_show.film.title,
+                                "seat_id": new_seat_id,
+                                "show_time": new_time,
+                                "screen_number": new_screen_number,
+                                "final_price": new_final_price
+                            })
+                            print(f"\nBooking {selected_booking_data_dict['booking_id']} successfully modified to {new_show.film.title} at {new_time} in Screen {new_screen_number}, Seat {new_seat_id} for £{new_final_price:.2f}.")
+                        else:
+                            # If new seat cannot be booked, re-book the old seat to restore original booking.
+                            old_show.book_seat(old_seat_id)
+                            print("Failed to book the new seat. Your original booking has been restored.")
+                    else:
+                        print("Invalid selection. Please enter a valid number or 0 to cancel.")
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+                except Exception as e:
+                    print(f"An unexpected error occurred during modification: {e}")
+
+            continue # Return to main menu after modification attempt.
+
+        else:
+            print("Invalid option!") # Handles invalid main menu choices.
+
+# This ensures that main() is called only when the script is executed directly, not when imported as a module.
+if __name__ == "__main__":
+    main()
